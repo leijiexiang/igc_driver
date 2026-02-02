@@ -4,10 +4,14 @@
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/if_vlan.h>
+#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 #include <linux/aer.h>
+#endif
 
 #include "igc.h"
 #include "igc_hw.h"
+#include "igc_compat.h"
 
 #define DRV_VERSION	"0.0.1-k"
 #define DRV_SUMMARY	"Intel(R) 2.5G Ethernet Linux Driver"
@@ -704,7 +708,7 @@ static int igc_set_mac(struct net_device *netdev, void *p)
 	if (!is_valid_ether_addr(addr->sa_data))
 		return -EADDRNOTAVAIL;
 
-	memcpy(netdev->dev_addr, addr->sa_data, netdev->addr_len);
+	igc_set_dev_addr(netdev, addr->sa_data);
 	memcpy(hw->mac.addr, addr->sa_data, netdev->addr_len);
 
 	/* set the correct pool for the new PF MAC address in entry 0 */
@@ -786,7 +790,7 @@ static int igc_tx_map(struct igc_ring *tx_ring,
 	struct igc_tx_buffer *tx_buffer;
 	union igc_adv_tx_desc *tx_desc;
 	u32 tx_flags = first->tx_flags;
-	struct skb_frag_struct *frag;
+	skb_frag_t *frag;
 	u16 i = tx_ring->next_to_use;
 	unsigned int data_len, size;
 	dma_addr_t dma;
@@ -885,7 +889,7 @@ static int igc_tx_map(struct igc_ring *tx_ring,
 	/* Make sure there is space in the ring for the next send. */
 	igc_maybe_stop_tx(tx_ring, DESC_NEEDED);
 
-	if (netif_xmit_stopped(txring_txq(tx_ring)) || !skb->xmit_more) {
+	if (netif_xmit_stopped(txring_txq(tx_ring)) || !igc_xmit_more(skb)) {
 		writel(i, tx_ring->tail);
 
 		/* we need this if more than one processor can write to our tail
@@ -945,7 +949,7 @@ static netdev_tx_t igc_xmit_frame_ring(struct sk_buff *skb,
 	 * otherwise try next time
 	 */
 	for (f = 0; f < skb_shinfo(skb)->nr_frags; f++)
-		count += TXD_USE_COUNT(skb_shinfo(skb)->frags[f].size);
+		count += TXD_USE_COUNT(skb_frag_size(&skb_shinfo(skb)->frags[f]));
 
 	if (igc_maybe_stop_tx(tx_ring, count + 3)) {
 		/* this is a hard error */
@@ -1145,7 +1149,7 @@ static struct sk_buff *igc_construct_skb(struct igc_ring *rx_ring,
 	/* Determine available headroom for copy */
 	headlen = size;
 	if (headlen > IGC_RX_HDR_LEN)
-		headlen = eth_get_headlen(va, IGC_RX_HDR_LEN);
+		headlen = igc_eth_get_headlen(rx_ring->netdev, va, IGC_RX_HDR_LEN);
 
 	/* align pull length to size of long to optimize memcpy performance */
 	memcpy(__skb_put(skb, headlen), va, ALIGN(headlen, sizeof(long)));
@@ -1760,7 +1764,7 @@ static void igc_down(struct igc_adapter *adapter)
 	igc_nfc_filter_exit(adapter);
 
 	/* set trans_start so we don't get spurious watchdogs during reset */
-	netdev->trans_start = jiffies;	
+	igc_netif_trans_update(netdev);
 
 	netif_carrier_off(netdev);
 	netif_tx_stop_all_queues(netdev);
@@ -2282,9 +2286,15 @@ static void igc_free_q_vector(struct igc_adapter *adapter, int v_idx)
 /* Need to wait a few seconds after link up to get diagnostic information from
  * the phy
  */
+#if IGC_USE_LEGACY_TIMER
 static void igc_update_phy_info(unsigned long data)
 {
 	struct igc_adapter *adapter = (struct igc_adapter *)data;
+#else
+static void igc_update_phy_info(struct timer_list *t)
+{
+	struct igc_adapter *adapter = from_timer(adapter, t, phy_info_timer);
+#endif
 
 	igc_get_phy_info(&adapter->hw);
 }
@@ -2330,12 +2340,18 @@ static bool igc_has_link(struct igc_adapter *adapter)
 
 /**
  * igc_watchdog - Timer Call-back
- * @data: pointer to adapter cast into an unsigned long
+ * @data: pointer to adapter cast into an unsigned long (legacy)
+ * @t: pointer to timer_list (new kernel)
  */
+#if IGC_USE_LEGACY_TIMER
 static void igc_watchdog(unsigned long data)
 {
 	struct igc_adapter *adapter = (struct igc_adapter *)data;
-	
+#else
+static void igc_watchdog(struct timer_list *t)
+{
+	struct igc_adapter *adapter = from_timer(adapter, t, watchdog_timer);
+#endif
 	/* Do the rest outside of interrupt context */
 	schedule_work(&adapter->watchdog_task);
 }
@@ -2972,7 +2988,7 @@ static int igc_alloc_q_vector(struct igc_adapter *adapter,
 		return -ENOMEM;
 
 	/* initialize NAPI */
-	netif_napi_add(adapter->netdev, &q_vector->napi,
+	igc_netif_napi_add(adapter->netdev, &q_vector->napi,
 		       igc_poll, 64);
 
 	/* tie q_vector and adapter together */
@@ -3544,7 +3560,7 @@ static int igc_probe(struct pci_dev *pdev,
 	if (err)
 		goto err_pci_reg;
 
-	pci_enable_pcie_error_reporting(pdev);
+	igc_pci_enable_pcie_error_reporting(pdev);
 
 	pci_set_master(pdev);
 
@@ -3622,7 +3638,7 @@ static int igc_probe(struct pci_dev *pdev,
 			dev_err(&pdev->dev, "NVM Read Error\n");
 	}
 
-	memcpy(netdev->dev_addr, hw->mac.addr, netdev->addr_len);
+	igc_set_dev_addr(netdev, hw->mac.addr);
 
 	if (!is_valid_ether_addr(netdev->dev_addr)) {
 		dev_err(&pdev->dev, "Invalid MAC Address\n");
@@ -3634,8 +3650,13 @@ static int igc_probe(struct pci_dev *pdev,
 	wr32(IGC_RXPBS, I225_RXPBSIZE_DEFAULT);
 	wr32(IGC_TXPBS, I225_TXPBSIZE_DEFAULT);
 
+#if IGC_USE_LEGACY_TIMER
 	setup_timer(&adapter->watchdog_timer, igc_watchdog, (unsigned long)adapter);
 	setup_timer(&adapter->phy_info_timer, igc_update_phy_info, (unsigned long)adapter);
+#else
+	timer_setup(&adapter->watchdog_timer, igc_watchdog, 0);
+	timer_setup(&adapter->phy_info_timer, igc_update_phy_info, 0);
+#endif
 
 	INIT_WORK(&adapter->reset_task, igc_reset_task);
 	INIT_WORK(&adapter->watchdog_task, igc_watchdog_task);
@@ -3731,7 +3752,7 @@ static void igc_remove(struct pci_dev *pdev)
 	kfree(adapter->shadow_vfta);
 	free_netdev(netdev);
 
-	pci_disable_pcie_error_reporting(pdev);
+	igc_pci_disable_pcie_error_reporting(pdev);
 
 	pci_disable_device(pdev);
 }
