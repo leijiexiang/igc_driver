@@ -1,11 +1,13 @@
 # Compiled kernel modules
 *.ko
-*.ko.cmd
 *.o
-*.o.cmd
 *.mod
 *.mod.c
 *.mod.o
+
+# Build command files
+*.cmd
+.*.cmd
 
 # Module build files
 Module.symvers
