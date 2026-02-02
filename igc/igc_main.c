@@ -4,6 +4,7 @@
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/if_vlan.h>
+#include <linux/dma-mapping.h>
 #include <linux/version.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 #include <linux/aer.h>
@@ -3443,7 +3444,7 @@ static const struct net_device_ops igc_netdev_ops = {
 	.ndo_stop		= igc_close,
 	.ndo_start_xmit		= igc_xmit_frame,
 	.ndo_set_mac_address	= igc_set_mac,
-	.ndo_change_mtu		= igc_change_mtu,
+	.IGC_NDO_CHANGE_MTU	= igc_change_mtu,
 	.ndo_get_stats		= igc_get_stats,
 };
 

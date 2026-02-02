@@ -78,8 +78,13 @@
 
 /* netif_trans_update / trans_start compatibility
  * netif_trans_update added in kernel 4.7, trans_start deprecated
+ * RHEL/CentOS 7.x (3.10.0-xxx) backported netif_trans_update
  */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0)
+#if defined(RHEL_RELEASE_CODE)
+/* RHEL/CentOS kernels have netif_trans_update backported */
+#define igc_netif_trans_update(netdev) \
+    netif_trans_update(netdev)
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0)
 #define igc_netif_trans_update(netdev) \
     ((netdev)->trans_start = jiffies)
 #else
@@ -128,6 +133,15 @@
 /* page_frag_cache_drain compatibility */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
 #define __page_frag_cache_drain(page, count) __free_page(page)
+#endif
+
+/* ndo_change_mtu compatibility for RHEL/CentOS 7.4+
+ * RHEL renamed ndo_change_mtu to ndo_change_mtu_rh74 for kABI
+ */
+#if defined(RHEL_RELEASE_CODE) && RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 4)
+#define IGC_NDO_CHANGE_MTU ndo_change_mtu_rh74
+#else
+#define IGC_NDO_CHANGE_MTU ndo_change_mtu
 #endif
 
 #endif /* _IGC_COMPAT_H_ */
