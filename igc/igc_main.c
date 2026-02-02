@@ -4,7 +4,6 @@
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/if_vlan.h>
-#include <linux/dma-mapping.h>
 #include <linux/version.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 #include <linux/aer.h>
@@ -13,6 +12,12 @@
 #include "igc.h"
 #include "igc_hw.h"
 #include "igc_compat.h"
+
+/* DMA mapping - include after pci.h for older kernels */
+#include <linux/dma-mapping.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 0, 0)
+#include <asm/dma-mapping.h>
+#endif
 
 #define DRV_VERSION	"0.0.1-k"
 #define DRV_SUMMARY	"Intel(R) 2.5G Ethernet Linux Driver"
