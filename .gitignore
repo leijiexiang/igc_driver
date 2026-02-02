@@ -1,0 +1,19 @@
+# Compiled kernel modules
+*.ko
+*.ko.cmd
+*.o
+*.o.cmd
+*.mod
+*.mod.c
+*.mod.o
+
+# Module build files
+Module.symvers
+modules.order
+.Module.symvers.cmd
+.modules.order.cmd
+.tmp_versions/
+
+# Editor backup files
+*~
+*.swp
